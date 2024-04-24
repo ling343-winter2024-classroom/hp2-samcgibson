@@ -1,0 +1,270 @@
+---
+title: "hp2-p2"
+author: "Sam Gibson"
+format: html
+editor: visual
+---
+
+## A Data Dive Into March Madness
+
+The NCAA March Madness Tournament is an annual single-elimination 64-team (68 if you count the play-in teams) tournament for Division I Men's collegiate basketball. It is a highly-viewed sporting event that starts in mid-March and bleeds into April, and millions craft brackets in hopes of perfectly predicting the outcome of each game. Increasingly, data scientists and those who favor analysis have pored over metrics and individual / team statistics in attempt to better predict tournament occurrences. But basketball isn't played on a spreadsheet — while bracket predictions have improved over the years, the 20initesimally improbable "perfect bracket" has yet to be achieved. The efforts of this analysis are not to predict next year's March Madness winners and losers, but rather to reflect on past results and predictions in the hope of answering some questions.
+
+Is there a correlation between advanced statistical metrics (PAKE, PASE)? Is PAKE or PASE a better predictor of tournament success? How good is the public at predicting outcomes? What metric do people rely on most for choosing who wins?
+
+There are two data sets in this analysis. The first, team-results.csv, includes 20ormation about every team that has qualified for March Madness in the past. The second, public-picks.csv, includes 20ormation about which teams were picked to go to what rounds, and in what quantity.
+
+### Importing Data
+
+```{r}
+library(tidyverse)
+install.packages('tidytuesdayR', repos = "https://cran.r-project.org/")
+library(tidytuesdayR)
+tuesdata <- tidytuesdayR::tt_load('2024-03-26')
+library(ggplot2)
+install.packages("ggrepel", repos = "https://cran.r-project.org/")
+library(ggrepel)
+devtools::install_github("lbenz730/ncaahoopR")
+library(ncaahoopR)
+install.packages("gridExtra", repos = "https://cran.r-project.org/")
+library(gridExtra)
+library(dplyr)
+```
+
+```{r}
+team_results <- tuesdata$'team-results'
+public_picks <- tuesdata$'public-picks'
+```
+
+```{r}
+install.packages('devtools', repos = "https://cran.r-project.org/")
+devtools::install_github("lbenz730/ncaahoopR")
+library(ncaahoopR)
+```
+
+### Team Results
+
+```{r}
+team_results
+```
+
+### Public Picks
+
+```{r}
+public_picks
+```
+
+### Data set 20o
+
+PAKE: Performance against Kenpom Efficiency (To learn more about Kenpom Efficiency, click [here](https://kenpom.com))
+
+PASE: Performance against seed expectations
+
+Here are the teams sorted by PAKE — aka, which teams perform the best compared to how their offensive/defensive statistics forecast them to perform.
+
+```{r}
+arrange(team_results, desc(PAKE))
+```
+
+That's North Carolina (UNC), Connecticut, Michigan State, Butler and Michigan in the top 5.
+
+Now here are the teams sorted by PASE — aka, which teams perform the best compared to how they are seeded in the NCAA Tournament
+
+```{r}
+arrange(team_results, desc(PASE))
+```
+
+Pretty similar top 5, here is the correlation coefficient between the two metrics, and a graph as well.
+
+```{r}
+cor(team_results$PASE, team_results$PAKE, use = "everything")
+```
+
+```{r}
+team_results |>
+  ggplot(mapping = aes(PASE, PAKE)) + geom_point()
+```
+
+It's hard to visualize 236 teams as dots, so lets add team colors.
+
+```{r}
+
+team_results_colors = team_results |>
+  left_join(ncaa_colors, join_by(TEAM == ncaa_name))
+
+team_results_colors |>
+  ggplot(mapping = aes(PASE, PAKE, color = primary_color)) + geom_point(size=3) + scale_color_identity()
+```
+
+That's a lot more helpful if you can recognize Carolina Blue or MSU's green, but it would be more helpful with the team's names.
+
+```{r}
+#| warning: false
+team_results_colors |>
+  ggplot(mapping = aes(PASE, PAKE, color = primary_color,label=TEAM)) + 
+  geom_point(na.rm=TRUE) +
+  geom_smooth() +
+  geom_text_repel(max.overlaps = 20) +
+  xlab("Performance Over Seed Expectation") +
+  ylab("Performance Over Kenpom Expectation") +
+  scale_color_identity() +
+  theme_minimal()
+```
+
+### Correlation with team success
+
+```{r}
+#| warning: false
+team_results_colors |>
+  ggplot(mapping = aes(WINPERCENT, PASE, color = primary_color,label=TEAM,na.rm=TRUE)) + 
+  geom_point() +
+  geom_smooth() +
+  geom_text_repel(max.overlaps = 20) +
+  xlab("Win Percentage") +
+  ylab("Performance Over Seed Expectation") +
+  scale_color_identity() +
+  theme_minimal()
+```
+
+```{r}
+#| warning: false
+team_results_colors |>
+  ggplot(mapping = aes(WINPERCENT, PAKE, color = primary_color,label=TEAM,na.rm=TRUE)) + 
+  geom_point() +
+  geom_smooth() +
+  geom_text_repel(max.overlaps = 20) +
+  xlab("Win Percentage") +
+  ylab("Performance Over Kenpom Expectation") +
+  scale_color_identity() +
+  theme_minimal()
+```
+
+It seems that while neither PASE nor PAKE correlates significantly more than the other to winning percentage, both a higher PAKE and PASE is related to a higher winning percentage.
+
+### Conference stuff
+
+```{r}
+team_results_colors |>
+  group_by(conference) |>
+  summarise(games_in_tournament = mean(GAMES),
+            winning_percent = mean(WINPERCENT),
+            final_fours = mean(F4)) |>
+  arrange(desc(games_in_tournament))
+```
+
+### Public Pick data
+
+This is data for this past March Madness tournament, and what teams were picked at which percentages to advance to which rounds.
+
+```{r}
+ncaapicks2024 <- full_join(team_results_colors,public_picks,by="TEAM")
+
+#Remove teams that were not in the tourney this year
+
+ncaapicks2024 <- ncaapicks2024[!is.na(ncaapicks2024$TEAMNO),]
+ncaapicks2024
+```
+
+Let's look how good the public is at predicting outcomes, specifically the elite eight. This year, the Elite Eight teams were Connecticut, Purdue, Tennessee, Illinois, Alabama, Duke, Clemson and NC State.
+
+```{r}
+
+elite_eight <- ncaapicks2024 |>
+  filter(TEAM %in% c("Connecticut",
+                     "Purdue",
+                     "Tennessee",
+                     "Illinois",
+                     "Alabama", 
+                     "Duke",
+                     "Clemson",
+                     "North Carolina St.")) |>
+  mutate(TEAM = factor(TEAM, levels = c("Connecticut",
+                     "Purdue",
+                     "Tennessee",
+                     "Illinois",
+                     "Alabama", 
+                     "Duke",
+                     "Clemson",
+                     "North Carolina St.")))
+
+elite_eight$E8.y <- as.numeric(sub("%", "", elite_eight$E8.y))
+
+ggplot(elite_eight, aes(x = TEAM, y = E8.y, fill = TEAM)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Team", y = "Elite Eight Percentage", title = "Percentage of people that picked
+       the listed team to go the Elite Eight") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+And here's the teams that were picked over them.
+
+```{r}
+
+ncaapicks2024$E8.y <- as.numeric(sub("%", "", ncaapicks2024$E8.y))
+
+top_20_teams <- ncaapicks2024 %>%
+  arrange(desc(E8.y)) %>% 
+  head(8) 
+
+ggplot(top_20_teams, aes(x = reorder(TEAM, -E8.y), y = E8.y, fill = TEAM)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Team", y = "Elite Eight Percentage") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  guides(fill = FALSE) 
+```
+
+So the public was 3/8 — but what metrics determined their choices?
+
+```{r}
+#| warning: false
+
+ggplot(ncaapicks2024, aes(x = PAKE, y = E8.y, label = TEAM, color = primary_color)) +
+  geom_point() +
+  geom_text_repel(nudge_x = 0.5, nudge_y = 0.5, max.overlaps = 20) +
+  labs(x = "PAKE (Performance Over Kenpom Expectation)", y = "Elite Eight Percentage Pick % (E8.y)",
+       title = "Comparison of Elite Eight Percentage Pick % and PAKE for All 64 Teams") +
+  scale_color_identity() + 
+  theme_minimal()
+```
+
+And for PASE...
+
+```{r}
+#| warning: false
+ggplot(ncaapicks2024, aes(x = PASE, y = E8.y, label = TEAM, color = primary_color)) +
+  geom_point() +
+  geom_text_repel(nudge_x = 0.5, nudge_y = 0.5, max.overlaps = 20) +
+  labs(x = "PASE (Performance Over Seeding Expectation)", y = "Elite Eight Percentage Pick % (E8.y)",
+       title = "Comparison of Elite Eight Percentage Pick % and PASE for All 64 Teams") +
+  scale_color_identity() + 
+  theme_minimal()
+```
+
+Looks like neither metric was used too much for predicting outcomes, what about win percentage and past tournament wins?
+
+```{r}
+#| warning: false
+ggplot(ncaapicks2024, aes(x = WINPERCENT, y = E8.y, label = TEAM, color = primary_color)) +
+  geom_point() +
+  geom_text_repel(nudge_x = 0.01, nudge_y = 0.5, max.overlaps = 20) +
+  geom_smooth() +
+  labs(x = "Win Percentage in Tournament", y = "Elite Eight Percentage Pick % (E8.y)",
+       title = "Comparison of Elite Eight Percentage Pick % and PASE for All 64 Teams") +
+  scale_color_identity() + 
+  theme_minimal()
+```
+
+```{r}
+#| warning: false
+ggplot(ncaapicks2024, aes(x = W, y = E8.y, label = TEAM, color = primary_color)) +
+  geom_point() +
+  geom_text_repel(nudge_x = 0.01, nudge_y = 0.5, max.overlaps = 20) +
+  geom_smooth() +
+  labs(x = "Win Percentage in Tournament", y = "Elite Eight Percentage Pick % (E8.y)",
+       title = "Comparison of Elite Eight Percentage Pick % and PASE for All 64 Teams") +
+  scale_color_identity() + 
+  theme_minimal()
+```
+
+Looks like the simpler metric of tournament win percentage was the most helpful in predicting tournament outcomes, at least for last year!
